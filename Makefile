@@ -1,18 +1,22 @@
 .PHONY: install test lint typecheck imports check
 
 install:
-	uv sync --extra dev
+	uv sync
 
 test:
-	uv run pytest
+	uv run poe test
 
 lint:
-	uv run ruff check .
+	uv run poe lint
 
 typecheck:
-	uv run mypy src
+	uv run poe typecheck
 
 imports:
-	uv run lint-imports
+	uv run poe imports
 
-check: lint typecheck imports test
+format:
+	uv run poe format
+
+check:
+	uv run poe check

@@ -10,16 +10,6 @@ dependencies = [
     "uvicorn[standard]>=0.32,<1.0",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "import-linter>=2.1,<3.0",
-    "mypy>=1.13,<2.0",
-    "pre-commit>=4.0,<5.0",
-    "pytest>=8.3,<9.0",
-    "pytest-cov>=6.0,<7.0",
-    "ruff>=0.8,<1.0",
-]
-
 [project.scripts]
 snappe = "snappe.main:run"
 
@@ -31,8 +21,16 @@ build-backend = "hatchling.build"
 packages = ["src/snappe"]
 
 [tool.pytest.ini_options]
-addopts = "--strict-markers --strict-config"
+addopts = "--strict-markers --strict-config --cov --cov-report=term-missing"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["src/snappe"]
+omit = ["src/snappe/main.py"]
+
+[tool.coverage.report]
+fail_under = 85
 
 [tool.ruff]
 target-version = "py312"
@@ -40,7 +38,8 @@ line-length = 100
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "SIM"]
+select = ["E", "F", "I", "B", "UP", "S", "C4", "SIM", "PL", "RUF", "ASYNC", "PT", "T20", "DTZ", "ERA"]
+per-file-ignores = { "tests/**/*.py" = ["PLR2004", "S101"] }
 
 [tool.mypy]
 python_version = "3.12"
@@ -49,20 +48,37 @@ mypy_path = "src"
 
 [tool.importlinter]
 root_package = "snappe"
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "Domain does not depend on adapters"
+name = "Layered architecture"
+type = "layers"
+layers = ["snappe.domain", "snappe.application", "snappe.adapters", "snappe.interfaces"]
+
+[[tool.importlinter.contracts]]
+name = "Domain has no external framework dependencies"
 type = "forbidden"
 source_modules = ["snappe.domain"]
-forbidden_modules = ["snappe.adapters"]
-
-[[tool.importlinter.contracts]]
-name = "Application does not depend on adapters"
-type = "forbidden"
-source_modules = ["snappe.application"]
-forbidden_modules = ["snappe.adapters"]
+forbidden_modules = ["fastapi", "sqlalchemy", "httpx"]
 
 [dependency-groups]
 dev = [
-    "httpx2>=2.16.0",
+    "bandit>=1.8,<2.0",
+    "httpx>=0.28,<1.0",
+    "import-linter>=2.1,<3.0",
+    "mypy>=1.13,<2.0",
+    "pip-audit>=2.7,<3.0",
+    "poethepoet>=0.31,<1.0",
+    "pre-commit>=4.0,<5.0",
+    "pytest>=9.0.3,<10.0",
+    "pytest-cov>=6.0,<7.0",
+    "ruff>=0.8,<1.0",
 ]
+
+[tool.poe.tasks]
+lint = "ruff check ."
+format = "ruff format --check ."
+typecheck = "mypy src"
+imports = "lint-imports"
+test = "pytest"
+check = ["lint", "format", "typecheck", "imports", "test"]
