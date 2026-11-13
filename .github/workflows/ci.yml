@@ -16,3 +16,4 @@ jobs:
       - run: uv run poe check
       - run: uv run bandit -r src
       - run: uv run pip-audit
+      - run: uv run python -m compileall -q src tests

@@ -6,7 +6,12 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115,<1.0",
+    "httpx>=0.28,<1.0",
     "prometheus-client>=0.21,<1.0",
+    "psycopg[binary]>=3.2,<4.0",
+    "pydantic-settings>=2.6,<3.0",
+    "pyjwt>=2.10,<3.0",
+    "sqlalchemy>=2.0,<3.0",
     "uvicorn[standard]>=0.32,<1.0",
 ]
 
@@ -53,7 +58,7 @@ include_external_packages = true
 [[tool.importlinter.contracts]]
 name = "Layered architecture"
 type = "layers"
-layers = ["snappe.domain", "snappe.application", "snappe.adapters", "snappe.interfaces"]
+layers = ["snappe.interfaces", "snappe.adapters", "snappe.application", "snappe.domain"]
 
 [[tool.importlinter.contracts]]
 name = "Domain has no external framework dependencies"

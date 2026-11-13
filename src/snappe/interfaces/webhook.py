@@ -1,0 +1,169 @@
+"""WhatsApp webhook verification and message ingestion API."""
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from pydantic import BaseModel, Field
+
+from snappe.adapters.channel import EventDeduplicator, verify_signature
+from snappe.adapters.llm import create_llm_client
+from snappe.application.brain import BrainService
+from snappe.application.handover import HandoverManager
+from snappe.application.orchestration import (
+    Brain,
+    InboundMessage,
+    MessageOrchestrator,
+    ResponseResult,
+)
+from snappe.application.profiles import ProfileService
+from snappe.config import Settings, get_settings
+from snappe.interfaces.handover import get_handover_manager
+from snappe.interfaces.profiles import get_profile_service
+
+router = APIRouter(prefix="/webhook", tags=["webhook"])
+
+_deduplicator = EventDeduplicator()
+
+
+def get_event_deduplicator() -> EventDeduplicator:
+    """Return the process-wide event deduplicator."""
+    return _deduplicator
+
+
+def get_brain(settings: Settings = Depends(get_settings)) -> Brain:  # noqa: B008
+    """Return the configured brain instance."""
+    return BrainService(create_llm_client(settings))
+
+
+@dataclass(frozen=True)
+class WebhookDependencies:
+    """Grouped dependencies for webhook message processing."""
+
+    settings: Settings
+    deduplicator: EventDeduplicator
+    profile_service: ProfileService
+    handover_manager: HandoverManager
+    brain: Brain
+
+
+def get_webhook_dependencies(
+    settings: Settings = Depends(get_settings),  # noqa: B008
+    deduplicator: EventDeduplicator = Depends(get_event_deduplicator),  # noqa: B008
+    profile_service: ProfileService = Depends(get_profile_service),  # noqa: B008
+    handover_manager: HandoverManager = Depends(get_handover_manager),  # noqa: B008
+    brain: Brain = Depends(get_brain),  # noqa: B008
+) -> WebhookDependencies:
+    """Resolve all runtime dependencies required by the webhook."""
+    return WebhookDependencies(
+        settings=settings,
+        deduplicator=deduplicator,
+        profile_service=profile_service,
+        handover_manager=handover_manager,
+        brain=brain,
+    )
+
+
+class WebhookVerifyParams(BaseModel):
+    """Query parameters for the Meta webhook verification challenge."""
+
+    hub_mode: str = Field(alias="hub.mode")
+    hub_verify_token: str = Field(alias="hub.verify_token")
+    hub_challenge: str = Field(alias="hub.challenge")
+
+
+class WebhookMessagePayload(BaseModel):
+    """Simplified inbound webhook message from a channel provider."""
+
+    event_id: str
+    business_id: str
+    conversation_id: str
+    sender_id: str
+    text: str
+
+
+class WebhookResponse(BaseModel):
+    """Response after processing a webhook message."""
+
+    reply: str | None
+    handover_required: bool
+    reason: str | None = None
+
+
+@router.get("")
+async def verify_webhook(
+    request: Request,
+    settings: Settings = Depends(get_settings),  # noqa: B008
+) -> Response:
+    """Handle the Meta webhook verification challenge."""
+    params = dict(request.query_params)
+    mode = params.get("hub.mode")
+    token = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge")
+
+    if not mode or not token or not challenge:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing verification parameters",
+        )
+
+    if mode != "subscribe":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid verification mode",
+        )
+
+    if settings.meta_verify_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="META_VERIFY_TOKEN is not configured",
+        )
+
+    if token != settings.meta_verify_token.get_secret_value():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Verification token mismatch",
+        )
+
+    return Response(content=challenge, media_type="text/plain")
+
+
+@router.post("", response_model=WebhookResponse)
+async def receive_webhook(
+    request: Request,
+    body: WebhookMessagePayload,
+    deps: WebhookDependencies = Depends(get_webhook_dependencies),  # noqa: B008
+) -> Mapping[str, Any]:
+    """Receive and process an inbound webhook message."""
+    if deps.settings.meta_app_secret is not None:
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        raw_body = await request.body()
+        if not verify_signature(
+            raw_body, signature, deps.settings.meta_app_secret.get_secret_value()
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid webhook signature",
+            )
+
+    if not deps.deduplicator.accept("meta", body.event_id):
+        return {"reply": None, "handover_required": False, "reason": "duplicate event"}
+
+    orchestrator = MessageOrchestrator(
+        deps.profile_service._repository,
+        deps.handover_manager,
+        deps.brain,
+    )
+
+    message = InboundMessage(
+        business_id=body.business_id,
+        conversation_id=body.conversation_id,
+        text=body.text,
+    )
+    result: ResponseResult = orchestrator.handle(message)
+    return {
+        "reply": result.reply,
+        "handover_required": result.handover_required,
+        "reason": result.reason,
+    }
