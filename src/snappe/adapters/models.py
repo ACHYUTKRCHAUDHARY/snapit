@@ -107,4 +107,3 @@ class MessageModel(Base):
     conversation: Mapped["ConversationModel"] = relationship(
         "ConversationModel", back_populates="messages"
     )
-

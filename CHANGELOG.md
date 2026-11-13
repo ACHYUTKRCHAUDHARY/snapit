@@ -29,3 +29,8 @@
   - Added `SQLProfileRepository` implementing `ProfileRepository` port with versioning and activation.
   - Added `SQLConversationRepository` and `ConversationRepository` port for conversation state and message audit logging.
   - Added `Database.create_tables()` for metadata initialization.
+- Added operator command engine and lifecycle endpoints (Phase 3C):
+  - Created `parse_operator_command` for slash commands (`/pause`, `/resume`, `/close`, `/status`).
+  - Extended `HandoverManager` and `HandoverState` to support conversation lifecycle (`active`, `handover`, `closed`).
+  - Added `POST /handover/{conversation_id}/close` and unified `POST /handover/command` endpoint.
+  - Added comprehensive syntax and operator workflow tests (101 total tests passing).

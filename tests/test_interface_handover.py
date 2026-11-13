@@ -138,3 +138,74 @@ def test_handover_endpoints_require_authentication() -> None:
     assert client.get("/handover/conv-1").status_code == 401
     assert client.post("/handover/conv-1/pause", json={"reason": "x"}).status_code == 401
     assert client.post("/handover/conv-1/resume", json={"command": "x"}).status_code == 401
+    assert client.post("/handover/conv-1/close", json={}).status_code == 401
+    assert client.post("/handover/command", json={"command": "/status c1"}).status_code == 401
+
+
+def test_close_conversation(client: TestClient) -> None:
+    response = client.post(
+        "/handover/conv-close/close",
+        json={"reason": "resolved customer issue"},
+        headers=_auth_header(),
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "closed"
+    assert data["paused"] is True
+
+
+def test_close_rejects_unauthorized(client: TestClient) -> None:
+    response = client.post(
+        "/handover/conv-close-unauth/close",
+        json={},
+        headers=_auth_header("unauthorized-user"),
+    )
+    assert response.status_code == 403
+
+
+def test_command_endpoint_workflow(client: TestClient) -> None:
+    # 1. /pause
+    res_pause = client.post(
+        "/handover/command",
+        json={"command": "/pause conv-cmd human assistance"},
+        headers=_auth_header(),
+    )
+    assert res_pause.status_code == 200
+    assert res_pause.json()["paused"] is True
+    assert res_pause.json()["reason"] == "human assistance"
+
+    # 2. /status
+    res_status = client.post(
+        "/handover/command",
+        json={"command": "/status conv-cmd"},
+        headers=_auth_header(),
+    )
+    assert res_status.status_code == 200
+    assert res_status.json()["paused"] is True
+
+    # 3. /resume
+    res_resume = client.post(
+        "/handover/command",
+        json={"command": "/resume conv-cmd"},
+        headers=_auth_header(),
+    )
+    assert res_resume.status_code == 200
+    assert res_resume.json()["paused"] is False
+
+    # 4. /close
+    res_close = client.post(
+        "/handover/command",
+        json={"command": "/close conv-cmd ticket done"},
+        headers=_auth_header(),
+    )
+    assert res_close.status_code == 200
+    assert res_close.json()["status"] == "closed"
+
+
+def test_command_endpoint_syntax_error(client: TestClient) -> None:
+    response = client.post(
+        "/handover/command",
+        json={"command": "invalid-no-slash"},
+        headers=_auth_header(),
+    )
+    assert response.status_code == 422
