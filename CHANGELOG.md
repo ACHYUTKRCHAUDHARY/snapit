@@ -34,3 +34,7 @@
   - Extended `HandoverManager` and `HandoverState` to support conversation lifecycle (`active`, `handover`, `closed`).
   - Added `POST /handover/{conversation_id}/close` and unified `POST /handover/command` endpoint.
   - Added comprehensive syntax and operator workflow tests (101 total tests passing).
+- Wired durable SQL persistence into live webhook pipeline (Phase 3D):
+  - Added `ConversationAuditor` port to `MessageOrchestrator` to automatically audit-log inbound customer messages, outbound AI replies, delivery outcomes, and handover transitions.
+  - Injected `get_conversation_repository` in `interfaces.webhook` providing real relational persistence.
+  - Added integration test ensuring full database audit trail for inbound customer queries and outbound bot replies.

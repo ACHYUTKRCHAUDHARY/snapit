@@ -8,7 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from snappe.adapters.channel import EventDeduplicator, verify_signature
+from snappe.adapters.database import Database
 from snappe.adapters.llm import create_llm_client
+from snappe.adapters.sql_conversations import ConversationRepository, SQLConversationRepository
 from snappe.adapters.whatsapp import create_whatsapp_sender
 from snappe.application.brain import BrainService
 from snappe.application.handover import HandoverManager
@@ -46,6 +48,15 @@ def get_whatsapp_sender(
     return create_whatsapp_sender(settings)
 
 
+def get_conversation_repository(
+    settings: Settings = Depends(get_settings),  # noqa: B008
+) -> ConversationRepository:
+    """Return the configured conversation repository."""
+    db = Database(settings)
+    db.create_tables()
+    return SQLConversationRepository(db)
+
+
 @dataclass(frozen=True)
 class WebhookDependencies:
     """Grouped dependencies for webhook message processing."""
@@ -56,6 +67,7 @@ class WebhookDependencies:
     handover_manager: HandoverManager
     brain: Brain
     sender: WhatsAppSender
+    conversation_repo: ConversationRepository
 
 
 def get_webhook_dependencies(  # noqa: PLR0913, PLR0917
@@ -65,6 +77,7 @@ def get_webhook_dependencies(  # noqa: PLR0913, PLR0917
     handover_manager: HandoverManager = Depends(get_handover_manager),  # noqa: B008
     brain: Brain = Depends(get_brain),  # noqa: B008
     sender: WhatsAppSender = Depends(get_whatsapp_sender),  # noqa: B008
+    conversation_repo: ConversationRepository = Depends(get_conversation_repository),  # noqa: B008
 ) -> WebhookDependencies:
     """Resolve all runtime dependencies required by the webhook."""
     return WebhookDependencies(
@@ -74,6 +87,7 @@ def get_webhook_dependencies(  # noqa: PLR0913, PLR0917
         handover_manager=handover_manager,
         brain=brain,
         sender=sender,
+        conversation_repo=conversation_repo,
     )
 
 
@@ -168,6 +182,7 @@ async def receive_webhook(
         deps.handover_manager,
         deps.brain,
         deps.sender,
+        auditor=deps.conversation_repo,
     )
 
     message = InboundMessage(
@@ -176,7 +191,7 @@ async def receive_webhook(
         sender_id=body.sender_id,
         text=body.text,
     )
-    result: ResponseResult = orchestrator.handle(message)
+    result: ResponseResult = orchestrator.handle(message, event_id=body.event_id)
     return {
         "reply": result.reply,
         "handover_required": result.handover_required,

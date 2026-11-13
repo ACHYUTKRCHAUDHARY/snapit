@@ -8,9 +8,11 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
+from snappe.adapters.database import Database
+from snappe.adapters.sql_conversations import SQLConversationRepository
 from snappe.adapters.whatsapp import FakeWhatsAppSender
 from snappe.config import Settings, get_settings
-from snappe.interfaces.webhook import get_whatsapp_sender
+from snappe.interfaces.webhook import get_conversation_repository, get_whatsapp_sender
 from snappe.main import create_full_app
 
 JWT_KEY = "test-key-that-is-at-least-32-bytes-long!"
@@ -38,6 +40,7 @@ def _make_client(
     *,
     meta_secret: bool = False,
     sender: FakeWhatsAppSender | None = None,
+    conv_repo: SQLConversationRepository | None = None,
 ) -> TestClient:
     """Build a TestClient with an optional Meta secret and a captured sender."""
     kw: dict[str, SecretStr | str] = {"supabase_jwt_secret": SecretStr(JWT_KEY)}
@@ -49,6 +52,13 @@ def _make_client(
     app.dependency_overrides[get_settings] = lambda: settings
     fake_sender = sender or FakeWhatsAppSender()
     app.dependency_overrides[get_whatsapp_sender] = lambda: fake_sender
+    if conv_repo is not None:
+        app.dependency_overrides[get_conversation_repository] = lambda: conv_repo
+    else:
+        db = Database(settings)
+        db.create_tables()
+        repo = SQLConversationRepository(db)
+        app.dependency_overrides[get_conversation_repository] = lambda: repo
     return TestClient(app)
 
 
@@ -269,3 +279,41 @@ def test_webhook_rejects_invalid_signature(client: TestClient) -> None:
     )
 
     assert response.status_code == 401
+
+
+def test_webhook_persists_inbound_and_outbound_messages(tmp_path) -> None:
+    db = Database(Settings(_env_file=None, database_url=f"sqlite:///{tmp_path / 'audit.db'}"))
+    db.create_tables()
+    repo = SQLConversationRepository(db)
+    client = _make_client(conv_repo=repo)
+
+    # Setup active profile
+    client.post(
+        "/profiles/biz-audit",
+        json={"display_name": "Audit Shop", "approved_facts": {"policy": "no-returns"}},
+        headers=_auth_header(),
+    )
+    client.post("/profiles/biz-audit/1/activate", json={}, headers=_auth_header())
+
+    # Send webhook message
+    response = client.post(
+        "/webhook",
+        json={
+            "event_id": "evt-audit-1",
+            "business_id": "biz-audit",
+            "conversation_id": "conv-audit-1",
+            "sender_id": "+919988776655",
+            "text": "What is the return policy?",
+        },
+    )
+    assert response.status_code == 200
+
+    # Verify database persistence
+    conv = repo.get_or_create("conv-audit-1", "biz-audit", "+919988776655")
+    assert conv.id == "conv-audit-1"
+
+    msgs = repo.list_messages("conv-audit-1")
+    assert len(msgs) >= 1
+    assert msgs[0].direction == "inbound"
+    assert msgs[0].content == "What is the return policy?"
+    assert msgs[0].provider_message_id == "evt-audit-1"

@@ -37,6 +37,38 @@ class WhatsAppSender(Protocol):
         """
 
 
+class ConversationAuditor(Protocol):
+    """Optional port for logging conversation lifecycle and message history."""
+
+    def get_or_create(
+        self,
+        conversation_id: str,
+        business_id: str,
+        customer_id: str,
+    ) -> object:
+        """Ensure conversation record exists."""
+
+    def update_status(
+        self,
+        conversation_id: str,
+        status: str,
+        reason: str | None = None,
+    ) -> None:
+        """Update conversation state."""
+
+    def record_message(  # noqa: PLR0913, PLR0917
+        self,
+        business_id: str,
+        conversation_id: str,
+        direction: str,
+        content: str,
+        provider_message_id: str | None = None,
+        delivery_status: str | None = None,
+        intent: str | None = None,
+    ) -> object:
+        """Record inbound or outbound message."""
+
+
 @dataclass(frozen=True)
 class ResponseResult:
     """Safe response or an explicit handover decision."""
@@ -62,16 +94,35 @@ class MessageOrchestrator:
         handovers: HandoverManager,
         brain: Brain,
         sender: WhatsAppSender,
+        auditor: ConversationAuditor | None = None,
     ) -> None:
         self._profiles = profiles
         self._handovers = handovers
         self._brain = brain
         self._sender = sender
+        self._auditor = auditor
 
-    def handle(self, message: InboundMessage) -> ResponseResult:
+    def handle(self, message: InboundMessage, event_id: str | None = None) -> ResponseResult:
         """Process one message without allowing customer text to control code."""
+        if self._auditor is not None:
+            self._auditor.get_or_create(
+                message.conversation_id, message.business_id, message.sender_id
+            )
+            self._auditor.record_message(
+                business_id=message.business_id,
+                conversation_id=message.conversation_id,
+                direction="inbound",
+                content=message.text,
+                provider_message_id=event_id,
+            )
+
         if self._handovers.state(message.conversation_id).paused:
+            if self._auditor is not None:
+                self._auditor.update_status(
+                    message.conversation_id, "handover", "paused for handover"
+                )
             return ResponseResult(None, True, "conversation is paused for handover")
+
         profile = next(
             (
                 candidate
@@ -82,13 +133,20 @@ class MessageOrchestrator:
         )
         proposal = self._brain(message, dict(profile.approved_facts) if profile else {})
         decision = enforce_guardrails(proposal, profile)
+
         if decision.handover_required:
             self._handovers.pause(message.conversation_id, decision.reason or "guardrail decision")
+            if self._auditor is not None:
+                self._auditor.update_status(
+                    message.conversation_id, "handover", decision.reason or "guardrail decision"
+                )
             return ResponseResult(None, True, decision.reason)
+
         # Guardrails passed — attempt delivery.
         reply = decision.reply
         if reply is None:
             return ResponseResult(None, True, "empty reply")
+
         delivered = False
         try:
             self._sender.send_reply(message.sender_id, reply)
@@ -97,4 +155,15 @@ class MessageOrchestrator:
             # Surface the delivery failure but keep the reply visible to the
             # caller so it can log, retry, or escalate without losing the text.
             delivered = False
+
+        if self._auditor is not None:
+            self._auditor.record_message(
+                business_id=message.business_id,
+                conversation_id=message.conversation_id,
+                direction="outbound",
+                content=reply,
+                delivery_status="delivered" if delivered else "failed",
+                intent=proposal.intent,
+            )
+
         return ResponseResult(reply, False, None, delivered)
