@@ -12,6 +12,7 @@ def test_database_check_connection_and_dispose(tmp_path) -> None:
     database = Database(settings)
 
     database.check_connection()
+    database.create_tables()
     database.dispose()
 
 

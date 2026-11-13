@@ -86,8 +86,9 @@ class MessageOrchestrator:
             self._handovers.pause(message.conversation_id, decision.reason or "guardrail decision")
             return ResponseResult(None, True, decision.reason)
         # Guardrails passed — attempt delivery.
-        reply = decision.reply  # never None when handover_required is False
-        assert reply is not None  # noqa: S101 — enforced by domain layer
+        reply = decision.reply
+        if reply is None:
+            return ResponseResult(None, True, "empty reply")
         delivered = False
         try:
             self._sender.send_reply(message.sender_id, reply)

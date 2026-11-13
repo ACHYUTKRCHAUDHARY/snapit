@@ -24,3 +24,8 @@
 - Wired outbound sender into `MessageOrchestrator`; delivery failures surface
   as `delivered=False` without triggering a second handover.
 - Added `META_PHONE_NUMBER_ID` and `META_ACCESS_TOKEN` settings fields.
+- Added durable SQLAlchemy persistence layer (`snappe.adapters.models`):
+  - Declarative models: `BusinessProfileModel`, `ConversationModel`, `MessageModel`.
+  - Added `SQLProfileRepository` implementing `ProfileRepository` port with versioning and activation.
+  - Added `SQLConversationRepository` and `ConversationRepository` port for conversation state and message audit logging.
+  - Added `Database.create_tables()` for metadata initialization.

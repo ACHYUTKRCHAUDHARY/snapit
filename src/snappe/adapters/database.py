@@ -4,6 +4,7 @@ from pathlib import Path
 
 from sqlalchemy import Engine, create_engine, text
 
+from snappe.adapters.models import Base
 from snappe.config import Settings
 
 
@@ -52,6 +53,10 @@ class Database:
                     text("INSERT INTO schema_migrations (version) VALUES (:version)"),
                     {"version": migration.name},
                 )
+
+    def create_tables(self) -> None:
+        """Create all declarative tables if they do not exist."""
+        Base.metadata.create_all(self.engine)
 
     def dispose(self) -> None:
         """Release pooled database connections."""
