@@ -11,3 +11,10 @@
   retention/masking.
 - Added external HTTP interfaces for profiles, WhatsApp webhook verification
   and event ingestion, and operator handover management.
+- Added LLM brain service with injection-resistant prompt construction
+  (`<customer_message>` XML delimiters), structured JSON output parsing, and
+  safe handover fallback on outage or guardrail violations.
+- Added Gemini API adapter (`GeminiLLMClient`) and deterministic
+  `FakeLLMClient` for hermetic test isolation.
+- Added adversarial guardrail tests covering prompt injection, hallucination,
+  oversized replies, and customer-side `/resume` bypass attempts.
