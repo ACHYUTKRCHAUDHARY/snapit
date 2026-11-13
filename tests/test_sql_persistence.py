@@ -159,3 +159,4 @@ def test_sql_conversation_repository(test_db: Database) -> None:
     updated_conv = repo.get_or_create("conv-1", "biz-1", "cust-1")
     assert updated_conv.status == "handover"
     assert updated_conv.handover_reason == "guardrail triggered"
+
