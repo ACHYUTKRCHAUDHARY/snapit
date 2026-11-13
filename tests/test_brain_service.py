@@ -11,7 +11,7 @@ from snappe.application.orchestration import InboundMessage
 
 
 def test_build_user_prompt_encapsulates_untrusted_customer_message() -> None:
-    message = InboundMessage("biz-1", "conv-1", "What are your hours?")
+    message = InboundMessage("biz-1", "conv-1", "sender-1", "What are your hours?")
     facts = {"hours": "9am-5pm", "phone": "555-0199"}
 
     prompt = build_user_prompt(message, facts)
@@ -68,7 +68,7 @@ def test_brain_service_returns_proposal_from_llm() -> None:
         )
     )
     brain = BrainService(llm)
-    message = InboundMessage("biz-1", "conv-1", "Are you open?")
+    message = InboundMessage("biz-1", "conv-1", "sender-1", "Are you open?")
 
     proposal = brain(message, {"hours": "9-5"})
 
@@ -81,7 +81,7 @@ def test_brain_service_returns_proposal_from_llm() -> None:
 def test_brain_service_fails_safe_to_handover_on_llm_outage() -> None:
     llm = FakeLLMClient(raise_error=LLMUnavailable("Network timeout"))
     brain = BrainService(llm)
-    message = InboundMessage("biz-1", "conv-1", "Are you open?")
+    message = InboundMessage("biz-1", "conv-1", "sender-1", "Are you open?")
 
     proposal = brain(message, {"hours": "9-5"})
 
@@ -93,7 +93,7 @@ def test_brain_service_fails_safe_to_handover_on_llm_outage() -> None:
 def test_brain_service_fails_safe_on_timeout_error() -> None:
     llm = FakeLLMClient(raise_error=TimeoutError("Request timed out"))
     brain = BrainService(llm)
-    message = InboundMessage("biz-1", "conv-1", "Hello")
+    message = InboundMessage("biz-1", "conv-1", "sender-1", "Hello")
 
     proposal = brain(message, {})
 

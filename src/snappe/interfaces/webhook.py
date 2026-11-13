@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from snappe.adapters.channel import EventDeduplicator, verify_signature
 from snappe.adapters.llm import create_llm_client
+from snappe.adapters.whatsapp import create_whatsapp_sender
 from snappe.application.brain import BrainService
 from snappe.application.handover import HandoverManager
 from snappe.application.orchestration import (
@@ -16,6 +17,7 @@ from snappe.application.orchestration import (
     InboundMessage,
     MessageOrchestrator,
     ResponseResult,
+    WhatsAppSender,
 )
 from snappe.application.profiles import ProfileService
 from snappe.config import Settings, get_settings
@@ -37,6 +39,13 @@ def get_brain(settings: Settings = Depends(get_settings)) -> Brain:  # noqa: B00
     return BrainService(create_llm_client(settings))
 
 
+def get_whatsapp_sender(
+    settings: Settings = Depends(get_settings),  # noqa: B008
+) -> WhatsAppSender:
+    """Return the configured WhatsApp outbound sender."""
+    return create_whatsapp_sender(settings)
+
+
 @dataclass(frozen=True)
 class WebhookDependencies:
     """Grouped dependencies for webhook message processing."""
@@ -46,14 +55,16 @@ class WebhookDependencies:
     profile_service: ProfileService
     handover_manager: HandoverManager
     brain: Brain
+    sender: WhatsAppSender
 
 
-def get_webhook_dependencies(
+def get_webhook_dependencies(  # noqa: PLR0913, PLR0917
     settings: Settings = Depends(get_settings),  # noqa: B008
     deduplicator: EventDeduplicator = Depends(get_event_deduplicator),  # noqa: B008
     profile_service: ProfileService = Depends(get_profile_service),  # noqa: B008
     handover_manager: HandoverManager = Depends(get_handover_manager),  # noqa: B008
     brain: Brain = Depends(get_brain),  # noqa: B008
+    sender: WhatsAppSender = Depends(get_whatsapp_sender),  # noqa: B008
 ) -> WebhookDependencies:
     """Resolve all runtime dependencies required by the webhook."""
     return WebhookDependencies(
@@ -62,6 +73,7 @@ def get_webhook_dependencies(
         profile_service=profile_service,
         handover_manager=handover_manager,
         brain=brain,
+        sender=sender,
     )
 
 
@@ -89,6 +101,7 @@ class WebhookResponse(BaseModel):
     reply: str | None
     handover_required: bool
     reason: str | None = None
+    delivered: bool = False
 
 
 @router.get("")
@@ -154,11 +167,13 @@ async def receive_webhook(
         deps.profile_service._repository,
         deps.handover_manager,
         deps.brain,
+        deps.sender,
     )
 
     message = InboundMessage(
         business_id=body.business_id,
         conversation_id=body.conversation_id,
+        sender_id=body.sender_id,
         text=body.text,
     )
     result: ResponseResult = orchestrator.handle(message)
@@ -166,4 +181,5 @@ async def receive_webhook(
         "reply": result.reply,
         "handover_required": result.handover_required,
         "reason": result.reason,
+        "delivered": result.delivered,
     }

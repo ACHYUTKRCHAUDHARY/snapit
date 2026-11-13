@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     meta_app_id: str | None = None
     meta_app_secret: SecretStr | None = None
     meta_verify_token: SecretStr | None = None
+    meta_phone_number_id: str | None = None
+    meta_access_token: SecretStr | None = None
     gemini_api_key: SecretStr | None = None
     llm_provider: str = "gemini"
     llm_model: str | None = None
