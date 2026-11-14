@@ -55,3 +55,8 @@
   - Added multi-tenant metadata parsing (`business_id`, `email`, `app_metadata`).
   - Added `require_role` dependency factory for role-based route access controls (RBAC).
   - 115 tests passed, 95.06% coverage, 0 vulnerabilities (`cryptography>=46.0.6`), 0 bandit issues.
+- Added Production Containerization & Deployment layer (Phase 3H):
+  - Created multi-stage `Dockerfile` using `ghcr.io/astral-sh/uv` builder and non-root unprivileged runner (`snappe:snappe`) with built-in `/healthz` healthcheck.
+  - Created `.dockerignore` excluding caches, tests, and temporary virtualenvs.
+  - Created `docker-compose.yml` linking the API service with PostgreSQL 16, auto-mounting initial tenant schema migrations, and configuring service healthchecks.
+  - Updated GitHub Actions CI workflow with Docker build validation and buildx cache.

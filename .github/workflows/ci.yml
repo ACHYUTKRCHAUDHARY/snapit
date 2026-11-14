@@ -2,18 +2,44 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
 
 jobs:
   check:
+    name: Lint, Typecheck, Test & Audit
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           version: latest
-      - run: uv sync --locked
-      - run: uv run poe check
-      - run: uv run bandit -r src
-      - run: uv run pip-audit
-      - run: uv run python -m compileall -q src tests
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Run Poe Quality Gates
+        run: uv run poe check
+      - name: Run Bandit Security Scan
+        run: uv run bandit -r src
+      - name: Run Pip-Audit CVE Scan
+        run: uv run pip-audit
+      - name: Verify Python Compilation
+        run: uv run python -m compileall -q src tests
+
+  docker-build:
+    name: Docker Build Validation
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: snappe:ci-test
