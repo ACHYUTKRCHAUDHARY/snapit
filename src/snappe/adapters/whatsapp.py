@@ -5,6 +5,7 @@ import httpx
 from snappe.application.orchestration import MessageSendError, WhatsAppSender
 from snappe.application.resilience import CircuitBreaker, CircuitOpenError
 from snappe.config import Settings
+from snappe.domain.messages import InteractiveMessage
 
 _META_API_BASE = "https://graph.facebook.com/v19.0"
 _HTTP_OK = 200
@@ -19,12 +20,18 @@ class FakeWhatsAppSender:
 
     def __init__(self, raise_error: Exception | None = None) -> None:
         self.sent: list[tuple[str, str]] = []
+        self.interactive_sent: list[tuple[str, InteractiveMessage]] = []
         self.raise_error = raise_error
 
     def send_reply(self, to: str, text: str) -> None:
         if self.raise_error is not None:
             raise self.raise_error
         self.sent.append((to, text))
+
+    def send_interactive(self, to: str, interactive: InteractiveMessage) -> None:
+        if self.raise_error is not None:
+            raise self.raise_error
+        self.interactive_sent.append((to, interactive))
 
 
 class MetaWhatsAppSender:
@@ -67,6 +74,75 @@ class MetaWhatsAppSender:
             "Authorization": f"Bearer {self._access_token}",
             "Content-Type": "application/json",
         }
+        try:
+            client = self._client or httpx.Client(timeout=self._timeout)
+            try:
+                response = client.post(url, json=payload, headers=headers)
+            finally:
+                if self._client is None:
+                    client.close()
+        except (httpx.HTTPError, httpx.TimeoutException) as error:
+            self._circuit_breaker.record_failure()
+            raise MessageSendError(f"Meta API network error: {error}") from error
+
+        if response.status_code != _HTTP_OK:
+            self._circuit_breaker.record_failure()
+            raise MessageSendError(
+                f"Meta API returned status {response.status_code}: {response.text}"
+            )
+
+        self._circuit_breaker.record_success()
+
+    def send_interactive(self, to: str, interactive: InteractiveMessage) -> None:
+        """POST an interactive button or list message to the Meta Cloud API."""
+        try:
+            self._circuit_breaker.check_permission()
+        except CircuitOpenError as exc:
+            raise MessageSendError(f"Outbound circuit is open: {exc}") from exc
+
+        url = f"{_META_API_BASE}/{self._phone_number_id}/messages"
+        interactive_payload: dict[str, object] = {
+            "type": interactive.type,
+            "body": {"text": interactive.body_text},
+        }
+
+        if interactive.type == "button":
+            interactive_payload["action"] = {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {"id": btn.button_id, "title": btn.title},
+                    }
+                    for btn in interactive.buttons
+                ]
+            }
+        elif interactive.type == "list":
+            interactive_payload["action"] = {
+                "button": interactive.button_text,
+                "sections": [
+                    {
+                        "title": sec.title,
+                        "rows": [
+                            {"id": r.row_id, "title": r.title, "description": r.description or ""}
+                            for r in sec.rows
+                        ],
+                    }
+                    for sec in interactive.sections
+                ],
+            }
+
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "interactive",
+            "interactive": interactive_payload,
+        }
+        headers = {
+            "Authorization": f"Bearer {self._access_token}",
+            "Content-Type": "application/json",
+        }
+
         try:
             client = self._client or httpx.Client(timeout=self._timeout)
             try:

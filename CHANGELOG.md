@@ -60,3 +60,8 @@
   - Created `.dockerignore` excluding caches, tests, and temporary virtualenvs.
   - Created `docker-compose.yml` linking the API service with PostgreSQL 16, auto-mounting initial tenant schema migrations, and configuring service healthchecks.
   - Updated GitHub Actions CI workflow with Docker build validation and buildx cache.
+- Added Advanced WhatsApp Messaging layer (Phase 3I):
+  - Added interactive WhatsApp models in `snappe.domain.messages`: `QuickReplyButton`, `ListRow`, `ListSection`, and `InteractiveMessage`.
+  - Added `send_interactive` support in `WhatsAppSender` port and `MetaWhatsAppSender` adapter with circuit breaker integration.
+  - Added media/interactive inbound webhook message normalization (`image`, `document`, `audio`, `video`).
+  - 120 tests passed, 93.51% coverage, 0 vulnerabilities, 0 bandit issues.

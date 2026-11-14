@@ -116,7 +116,9 @@ class WebhookMessagePayload(BaseModel):
     business_id: str
     conversation_id: str
     sender_id: str
-    text: str
+    text: str = ""
+    message_type: str = "text"
+    media_url: str | None = None
 
 
 class WebhookResponse(BaseModel):
@@ -203,11 +205,15 @@ async def receive_webhook(
         auditor=deps.conversation_repo,
     )
 
+    text_content = body.text
+    if body.message_type in ("image", "document", "audio", "video") and not text_content.strip():
+        text_content = f"[{body.message_type} received]"
+
     message = InboundMessage(
         business_id=body.business_id,
         conversation_id=body.conversation_id,
         sender_id=body.sender_id,
-        text=body.text,
+        text=text_content,
     )
     result: ResponseResult = orchestrator.handle(message, event_id=body.event_id)
     return {

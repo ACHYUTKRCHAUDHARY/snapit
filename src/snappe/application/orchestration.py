@@ -6,6 +6,7 @@ from typing import Protocol
 from snappe.application.handover import HandoverManager
 from snappe.application.profiles import ProfileRepository
 from snappe.domain.brain import BrainProposal, enforce_guardrails
+from snappe.domain.messages import InteractiveMessage
 
 
 class MessageSendError(RuntimeError):
@@ -28,10 +29,16 @@ class Brain(Protocol):
 
 
 class WhatsAppSender(Protocol):
-    """Port for sending outbound WhatsApp text messages."""
+    """Port for sending outbound WhatsApp text or interactive messages."""
 
     def send_reply(self, to: str, text: str) -> None:
         """Deliver *text* to the WhatsApp number identified by *to*.
+
+        Raises :exc:`MessageSendError` on any delivery failure.
+        """
+
+    def send_interactive(self, to: str, interactive: InteractiveMessage) -> None:
+        """Deliver an *interactive* button or list message to *to*.
 
         Raises :exc:`MessageSendError` on any delivery failure.
         """
