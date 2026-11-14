@@ -1,10 +1,20 @@
 """Data minimization, masking, consent, and retention primitives."""
 
+import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 _PHONE_SUFFIX_LENGTH = 4
+
+
+def hash_phone(phone: str, salt: str = "") -> str:
+    """Return a deterministic one-way SHA-256 hash of a normalized phone number."""
+    normalized = "".join(
+        character for character in phone if character.isdigit() or character == "+"
+    )
+    salted = f"{salt}:{normalized}" if salt else normalized
+    return hashlib.sha256(salted.encode("utf-8")).hexdigest()
 
 
 def mask_phone(phone: str) -> str:
@@ -31,6 +41,11 @@ class AuditEvent:
 class RetentionStore(Protocol):
     def purge_before(self, cutoff: datetime) -> int:
         """Delete records older than the cutoff and return the count."""
+
+
+class CustomerDataStore(Protocol):
+    def purge_customer_data(self, business_id: str, customer_id: str) -> int:
+        """Purge all data associated with a customer for GDPR/DPDP compliance."""
 
 
 def purge_expired(store: RetentionStore, retention_days: int, now: datetime | None = None) -> int:

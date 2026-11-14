@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from snappe.application.data_protection import mask_phone, purge_expired
+from snappe.application.data_protection import hash_phone, mask_phone, purge_expired
 
 
 class Store:
@@ -16,6 +16,13 @@ class Store:
 
 def test_mask_phone_and_retention_boundary() -> None:
     assert mask_phone("+919876543210") == "*********3210"
+    assert mask_phone("123") == "***"
+    assert hash_phone("+919876543210") == hash_phone("+919876543210")
+    assert hash_phone("+919876543210") != hash_phone("+919876543211")
+    assert hash_phone("+919876543210", salt="tenant1") != hash_phone(
+        "+919876543210", salt="tenant2"
+    )
+
     now = datetime(2026, 1, 1, tzinfo=UTC)
     store = Store()
 

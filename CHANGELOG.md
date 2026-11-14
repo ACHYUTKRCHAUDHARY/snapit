@@ -44,3 +44,9 @@
   - Enhanced `RetryPolicy` with exponential `backoff_factor`.
   - Added idempotent event handling in `SQLConversationRepository.record_message`.
   - 109 tests passed, 94.71% coverage, 0 vulnerabilities, 0 bandit issues.
+- Added Data Protection, Privacy & Retention Purge layer (Phase 3F):
+  - Added `hash_phone` (salted SHA-256 for PII phone anonymization) and enhanced `mask_phone`.
+  - Added SQL persistence methods `purge_before` (for time-based retention) and `purge_customer_data` (for GDPR/DPDP right-to-erasure).
+  - Added `POST /privacy/retention/purge` and `POST /privacy/customers/{business_id}/purge` endpoints.
+  - Attached `privacy_router` to `create_full_app`.
+  - 112 tests passed, 94.94% coverage, 0 vulnerabilities, 0 bandit issues.

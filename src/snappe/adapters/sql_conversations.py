@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import sessionmaker
 
 from snappe.adapters.database import Database
@@ -77,6 +77,12 @@ class ConversationRepository(Protocol):
         limit: int = 50,
     ) -> list[PersistedMessage]:
         """Fetch recent messages for a conversation ordered by creation time."""
+
+    def purge_before(self, cutoff: datetime) -> int:
+        """Purge messages created prior to the cutoff timestamp."""
+
+    def purge_customer_data(self, business_id: str, customer_id: str) -> int:
+        """Purge all conversations and messages for a customer."""
 
 
 class SQLConversationRepository(ConversationRepository):
@@ -206,3 +212,31 @@ class SQLConversationRepository(ConversationRepository):
             )
             models = session.scalars(stmt).all()
             return [self._to_msg(m) for m in models]
+
+    def purge_before(self, cutoff: datetime) -> int:
+        with self._session_factory() as session:
+            stmt = delete(MessageModel).where(MessageModel.created_at < cutoff)
+            result = session.execute(stmt)
+            session.commit()
+            return int(getattr(result, "rowcount", 0))
+
+    def purge_customer_data(self, business_id: str, customer_id: str) -> int:
+        with self._session_factory() as session:
+            # Find all conversations belonging to this customer
+            conv_stmt = select(ConversationModel.id).where(
+                ConversationModel.business_id == business_id,
+                ConversationModel.customer_id == customer_id,
+            )
+            conv_ids = session.scalars(conv_stmt).all()
+            if not conv_ids:
+                return 0
+
+            # Delete messages first
+            msg_stmt = delete(MessageModel).where(MessageModel.conversation_id.in_(conv_ids))
+            msg_res = session.execute(msg_stmt)
+
+            # Delete conversations
+            conv_delete = delete(ConversationModel).where(ConversationModel.id.in_(conv_ids))
+            session.execute(conv_delete)
+            session.commit()
+            return int(getattr(msg_res, "rowcount", 0))

@@ -7,6 +7,7 @@ from snappe.adapters.database import Database
 from snappe.adapters.http import create_app
 from snappe.config import Settings
 from snappe.interfaces.handover import router as handover_router
+from snappe.interfaces.privacy import router as privacy_router
 from snappe.interfaces.profiles import router as profiles_router
 from snappe.interfaces.webhook import router as webhook_router
 
@@ -25,6 +26,7 @@ def create_full_app(
     application.include_router(profiles_router)
     application.include_router(webhook_router)
     application.include_router(handover_router)
+    application.include_router(privacy_router)
     return application
 
 
