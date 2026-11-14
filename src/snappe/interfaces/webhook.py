@@ -14,6 +14,12 @@ from snappe.adapters.sql_conversations import ConversationRepository, SQLConvers
 from snappe.adapters.whatsapp import create_whatsapp_sender
 from snappe.application.brain import BrainService
 from snappe.application.handover import HandoverManager
+from snappe.application.observability import (
+    PROCESSING_DURATION_SECONDS,
+    record_handover,
+    record_inbound_message,
+    record_outbound_reply,
+)
 from snappe.application.orchestration import (
     Brain,
     InboundMessage,
@@ -215,7 +221,16 @@ async def receive_webhook(
         sender_id=body.sender_id,
         text=text_content,
     )
-    result: ResponseResult = orchestrator.handle(message, event_id=body.event_id)
+    record_inbound_message(body.business_id, body.message_type)
+
+    with PROCESSING_DURATION_SECONDS.labels(business_id=body.business_id).time():
+        result: ResponseResult = orchestrator.handle(message, event_id=body.event_id)
+
+    if result.handover_required:
+        record_handover(body.business_id, result.reason)
+    elif result.reply is not None:
+        record_outbound_reply(body.business_id, result.delivered)
+
     return {
         "reply": result.reply,
         "handover_required": result.handover_required,

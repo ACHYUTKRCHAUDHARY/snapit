@@ -65,3 +65,11 @@
   - Added `send_interactive` support in `WhatsAppSender` port and `MetaWhatsAppSender` adapter with circuit breaker integration.
   - Added media/interactive inbound webhook message normalization (`image`, `document`, `audio`, `video`).
   - 120 tests passed, 93.51% coverage, 0 vulnerabilities, 0 bandit issues.
+- Added Conversational Analytics & Observability instrumentation (Phase 3J):
+  - Created Prometheus metrics in `snappe.application.observability`:
+    - `snappe_inbound_messages_total`: Inbound message traffic by business ID and message type.
+    - `snappe_outbound_replies_total`: AI reply generation count tagged with delivery outcome.
+    - `snappe_handover_events_total`: Human handover escalations by reason.
+    - `snappe_message_processing_duration_seconds`: Full-pipeline latency histogram.
+  - Instrumented live webhook request ingestion pipeline with metrics collection.
+  - 122 tests passed, 93.54% coverage, 0 vulnerabilities, 0 bandit issues.
