@@ -22,6 +22,7 @@ from snappe.application.orchestration import (
     WhatsAppSender,
 )
 from snappe.application.profiles import ProfileService
+from snappe.application.resilience import RateLimiter, RateLimitExceeded
 from snappe.config import Settings, get_settings
 from snappe.interfaces.handover import get_handover_manager
 from snappe.interfaces.profiles import get_profile_service
@@ -29,11 +30,17 @@ from snappe.interfaces.profiles import get_profile_service
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 
 _deduplicator = EventDeduplicator()
+_rate_limiter = RateLimiter(default_rate=50.0, default_capacity=100.0)
 
 
 def get_event_deduplicator() -> EventDeduplicator:
     """Return the process-wide event deduplicator."""
     return _deduplicator
+
+
+def get_rate_limiter() -> RateLimiter:
+    """Return the process-wide webhook rate limiter."""
+    return _rate_limiter
 
 
 def get_brain(settings: Settings = Depends(get_settings)) -> Brain:  # noqa: B008
@@ -68,6 +75,7 @@ class WebhookDependencies:
     brain: Brain
     sender: WhatsAppSender
     conversation_repo: ConversationRepository
+    rate_limiter: RateLimiter
 
 
 def get_webhook_dependencies(  # noqa: PLR0913, PLR0917
@@ -78,6 +86,7 @@ def get_webhook_dependencies(  # noqa: PLR0913, PLR0917
     brain: Brain = Depends(get_brain),  # noqa: B008
     sender: WhatsAppSender = Depends(get_whatsapp_sender),  # noqa: B008
     conversation_repo: ConversationRepository = Depends(get_conversation_repository),  # noqa: B008
+    rate_limiter: RateLimiter = Depends(get_rate_limiter),  # noqa: B008
 ) -> WebhookDependencies:
     """Resolve all runtime dependencies required by the webhook."""
     return WebhookDependencies(
@@ -88,6 +97,7 @@ def get_webhook_dependencies(  # noqa: PLR0913, PLR0917
         brain=brain,
         sender=sender,
         conversation_repo=conversation_repo,
+        rate_limiter=rate_limiter,
     )
 
 
@@ -176,6 +186,14 @@ async def receive_webhook(
 
     if not deps.deduplicator.accept("meta", body.event_id):
         return {"reply": None, "handover_required": False, "reason": "duplicate event"}
+
+    try:
+        deps.rate_limiter.acquire(body.business_id)
+    except RateLimitExceeded as error:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(error),
+        ) from error
 
     orchestrator = MessageOrchestrator(
         deps.profile_service._repository,

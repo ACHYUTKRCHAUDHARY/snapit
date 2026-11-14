@@ -116,6 +116,22 @@ def test_meta_sender_raises_on_timeout() -> None:
         sender.send_reply("+919999", "hi")
 
 
+def test_meta_sender_trips_circuit_breaker() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="Internal Server Error")
+
+    sender = _make_meta_sender(httpx.MockTransport(handler))
+
+    # Fail 5 times to trip circuit
+    for _ in range(5):
+        with pytest.raises(MessageSendError):
+            sender.send_reply("+919999", "hi")
+
+    # 6th call should be blocked immediately by circuit breaker
+    with pytest.raises(MessageSendError, match="circuit is open"):
+        sender.send_reply("+919999", "hi")
+
+
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------

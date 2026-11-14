@@ -11,8 +11,13 @@ from pydantic import SecretStr
 from snappe.adapters.database import Database
 from snappe.adapters.sql_conversations import SQLConversationRepository
 from snappe.adapters.whatsapp import FakeWhatsAppSender
+from snappe.application.resilience import RateLimiter
 from snappe.config import Settings, get_settings
-from snappe.interfaces.webhook import get_conversation_repository, get_whatsapp_sender
+from snappe.interfaces.webhook import (
+    get_conversation_repository,
+    get_rate_limiter,
+    get_whatsapp_sender,
+)
 from snappe.main import create_full_app
 
 JWT_KEY = "test-key-that-is-at-least-32-bytes-long!"
@@ -41,6 +46,7 @@ def _make_client(
     meta_secret: bool = False,
     sender: FakeWhatsAppSender | None = None,
     conv_repo: SQLConversationRepository | None = None,
+    rate_limiter: RateLimiter | None = None,
 ) -> TestClient:
     """Build a TestClient with an optional Meta secret and a captured sender."""
     kw: dict[str, SecretStr | str] = {"supabase_jwt_secret": SecretStr(JWT_KEY)}
@@ -52,6 +58,8 @@ def _make_client(
     app.dependency_overrides[get_settings] = lambda: settings
     fake_sender = sender or FakeWhatsAppSender()
     app.dependency_overrides[get_whatsapp_sender] = lambda: fake_sender
+    if rate_limiter is not None:
+        app.dependency_overrides[get_rate_limiter] = lambda: rate_limiter
     if conv_repo is not None:
         app.dependency_overrides[get_conversation_repository] = lambda: conv_repo
     else:
@@ -317,3 +325,26 @@ def test_webhook_persists_inbound_and_outbound_messages(tmp_path) -> None:
     assert msgs[0].direction == "inbound"
     assert msgs[0].content == "What is the return policy?"
     assert msgs[0].provider_message_id == "evt-audit-1"
+
+
+def test_webhook_rate_limiting_returns_429() -> None:
+    limiter = RateLimiter(default_rate=1.0, default_capacity=1.0)
+    client = _make_client(rate_limiter=limiter)
+
+    payload = {
+        "event_id": "evt-rl-1",
+        "business_id": "biz-rate-limited",
+        "conversation_id": "conv-rl",
+        "sender_id": "+9111223344",
+        "text": "hello",
+    }
+
+    # First request consumes token
+    res1 = client.post("/webhook", json=payload)
+    assert res1.status_code == 200
+
+    # Second request with new event_id exceeds rate limit
+    payload["event_id"] = "evt-rl-2"
+    res2 = client.post("/webhook", json=payload)
+    assert res2.status_code == 429
+    assert "Rate limit exceeded" in res2.json()["detail"]

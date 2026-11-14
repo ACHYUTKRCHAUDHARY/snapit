@@ -3,6 +3,7 @@
 import httpx
 
 from snappe.application.orchestration import MessageSendError, WhatsAppSender
+from snappe.application.resilience import CircuitBreaker, CircuitOpenError
 from snappe.config import Settings
 
 _META_API_BASE = "https://graph.facebook.com/v19.0"
@@ -39,14 +40,21 @@ class MetaWhatsAppSender:
         access_token: str,
         timeout_seconds: float = 10.0,
         http_client: httpx.Client | None = None,
+        circuit_breaker: CircuitBreaker | None = None,
     ) -> None:
         self._phone_number_id = phone_number_id
         self._access_token = access_token
         self._timeout = timeout_seconds
         self._client = http_client
+        self._circuit_breaker = circuit_breaker or CircuitBreaker()
 
     def send_reply(self, to: str, text: str) -> None:
         """POST a text message to the Meta Cloud API messages endpoint."""
+        try:
+            self._circuit_breaker.check_permission()
+        except CircuitOpenError as exc:
+            raise MessageSendError(f"Outbound circuit is open: {exc}") from exc
+
         url = f"{_META_API_BASE}/{self._phone_number_id}/messages"
         payload = {
             "messaging_product": "whatsapp",
@@ -67,12 +75,16 @@ class MetaWhatsAppSender:
                 if self._client is None:
                     client.close()
         except (httpx.HTTPError, httpx.TimeoutException) as error:
+            self._circuit_breaker.record_failure()
             raise MessageSendError(f"Meta API network error: {error}") from error
 
         if response.status_code != _HTTP_OK:
+            self._circuit_breaker.record_failure()
             raise MessageSendError(
                 f"Meta API returned status {response.status_code}: {response.text}"
             )
+
+        self._circuit_breaker.record_success()
 
 
 def create_whatsapp_sender(settings: Settings) -> WhatsAppSender:

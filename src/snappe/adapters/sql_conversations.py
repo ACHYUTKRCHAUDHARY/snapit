@@ -162,6 +162,16 @@ class SQLConversationRepository(ConversationRepository):
     ) -> PersistedMessage:
         with self._session_factory() as session:
             now = datetime.now(UTC)
+            # Check for existing message with same business_id and provider_message_id
+            if provider_message_id is not None:
+                existing_stmt = select(MessageModel).where(
+                    MessageModel.business_id == business_id,
+                    MessageModel.provider_message_id == provider_message_id,
+                )
+                existing = session.scalar(existing_stmt)
+                if existing is not None:
+                    return self._to_msg(existing)
+
             # Update conversation last_message_at
             conv_stmt = select(ConversationModel).where(ConversationModel.id == conversation_id)
             conv = session.scalar(conv_stmt)

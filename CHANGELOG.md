@@ -38,3 +38,9 @@
   - Added `ConversationAuditor` port to `MessageOrchestrator` to automatically audit-log inbound customer messages, outbound AI replies, delivery outcomes, and handover transitions.
   - Injected `get_conversation_repository` in `interfaces.webhook` providing real relational persistence.
   - Added integration test ensuring full database audit trail for inbound customer queries and outbound bot replies.
+- Added Rate Limiting and Outbound Resilience layer (Phase 3E):
+  - Created `TokenBucket` and per-business `RateLimiter` returning HTTP 429 upon quota exhaustion.
+  - Added 3-state `CircuitBreaker` (CLOSED, OPEN, HALF-OPEN) to `MetaWhatsAppSender` to protect against cascading Meta API failures.
+  - Enhanced `RetryPolicy` with exponential `backoff_factor`.
+  - Added idempotent event handling in `SQLConversationRepository.record_message`.
+  - 109 tests passed, 94.71% coverage, 0 vulnerabilities, 0 bandit issues.
