@@ -50,3 +50,8 @@
   - Added `POST /privacy/retention/purge` and `POST /privacy/customers/{business_id}/purge` endpoints.
   - Attached `privacy_router` to `create_full_app`.
   - 112 tests passed, 94.94% coverage, 0 vulnerabilities, 0 bandit issues.
+- Added Multi-Tenant Supabase Auth & JWT RS256 layer (Phase 3G):
+  - Supported asymmetric public key signature verification (`RS256`) via `SUPABASE_JWT_PUBLIC_KEY` in addition to symmetric `HS256`.
+  - Added multi-tenant metadata parsing (`business_id`, `email`, `app_metadata`).
+  - Added `require_role` dependency factory for role-based route access controls (RBAC).
+  - 115 tests passed, 95.06% coverage, 0 vulnerabilities (`cryptography>=46.0.6`), 0 bandit issues.

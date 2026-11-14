@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     supabase_anon_key: SecretStr | None = None
     supabase_service_role_key: SecretStr | None = None
     supabase_jwt_secret: SecretStr | None = None
+    supabase_jwt_public_key: str | None = None
     meta_app_id: str | None = None
     meta_app_secret: SecretStr | None = None
     meta_verify_token: SecretStr | None = None
@@ -41,8 +42,8 @@ class Settings(BaseSettings):
                 missing.append("SUPABASE_URL")
             if not self.supabase_service_role_key:
                 missing.append("SUPABASE_SERVICE_ROLE_KEY")
-            if not self.supabase_jwt_secret:
-                missing.append("SUPABASE_JWT_SECRET")
+            if not self.supabase_jwt_secret and not self.supabase_jwt_public_key:
+                missing.append("SUPABASE_JWT_SECRET or SUPABASE_JWT_PUBLIC_KEY")
             if not self.database_url.startswith(("postgresql://", "postgresql+")):
                 missing.append("DATABASE_URL (PostgreSQL)")
             if missing:
